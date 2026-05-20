@@ -6,3 +6,4 @@ tensorflowjs>=4.20.0
 pyyaml>=6.0
 pillow>=10.0.0
 numpy>=1.26.0
+kaggle>=1.6.0

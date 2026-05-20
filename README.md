@@ -6,6 +6,16 @@ Open the training notebook in Colab:
 
 [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/fishman7337/leaf-object-detection/blob/main/colab_leaf_yolo_training.ipynb)
 
+The Colab notebook saves everything under:
+
+```text
+MyDrive/leaf-object-detection/
+```
+
+It caches `archive.zip`, uploads the prepared YOLO dataset as
+`datasets/leaf_yolo_dataset.tar.gz`, syncs run folders after each model, and
+writes final ZIP/summary artifacts to `artifacts/`.
+
 ## Current Local Status
 
 - Prepared dataset, after running prep: `datasets/leaf_yolo`
@@ -62,8 +72,10 @@ The smoke test trains `yolo26s.pt` for 20 epochs. The main run trains:
 - `yolo26m.pt`
 - `yolo26x.pt`
 
-Training uses pretrained weights, early stopping, mosaic closeout, HSV/geometry
-augmentation, mixup, and cutmix. The final model should be chosen by test recall,
+Training uses pretrained weights, early stopping, cosine LR, multi-scale main
+training, mosaic closeout, HSV/geometry augmentation, mixup, and cutmix. The
+main Colab run also performs a lower-augmentation fine-tune stage from each
+candidate model's `best.pt`. The final model should be chosen by test recall,
 mAP50-95, false positives on no-leaf images, model size, and browser FPS.
 
 ## Deployment

@@ -1,14 +1,20 @@
 # Colab A100 Leaf YOLO Training
 
-Use a Colab runtime with an A100 GPU. The notebook can clone this repository
-directly from GitHub. The dataset can be downloaded from Kaggle if you upload a
-`kaggle.json` API token, or you can upload `archive.zip` manually.
+Use a Colab runtime with an A100 GPU. The notebook clones this repository,
+mounts Google Drive, caches the raw dataset in Drive, uploads the prepared
+YOLO dataset to Drive, and syncs checkpoints/exports to Drive after each model.
 
 ## 1. Setup
 
 ```python
-from google.colab import files
-uploaded = files.upload()  # upload kaggle.json, or skip if archive.zip is already available
+from google.colab import drive
+from pathlib import Path
+import os
+
+drive.mount("/content/drive")
+DRIVE_ROOT = "/content/drive/MyDrive/leaf-object-detection"
+os.environ["DRIVE_ROOT"] = DRIVE_ROOT
+Path(DRIVE_ROOT).mkdir(parents=True, exist_ok=True)
 ```
 
 ```bash
@@ -21,12 +27,13 @@ pip install -U -r requirements-colab.txt
 If you uploaded `kaggle.json`, run:
 
 ```bash
-mkdir -p ~/.kaggle
-cp /content/kaggle.json ~/.kaggle/kaggle.json
+mkdir -p ~/.kaggle "$DRIVE_ROOT/datasets" "$DRIVE_ROOT/runs" "$DRIVE_ROOT/artifacts"
+cp kaggle.json ~/.kaggle/kaggle.json
 chmod 600 ~/.kaggle/kaggle.json
 pip install -U kaggle
 kaggle datasets download -d sebastianpalaciob/plantvillage-for-object-detection-yolo -p . --force
 mv plantvillage-for-object-detection-yolo.zip archive.zip
+cp archive.zip "$DRIVE_ROOT/archive.zip"
 ```
 
 If you prefer manual upload instead:
@@ -34,6 +41,7 @@ If you prefer manual upload instead:
 ```python
 from google.colab import files
 files.upload()  # upload archive.zip into /content/leaf-object-detection
+!cp archive.zip "$DRIVE_ROOT/archive.zip"
 ```
 
 ## 2. Optional Public Mixed-Scene Data
@@ -73,6 +81,9 @@ python scripts/prepare_leaf_dataset.py \
 python scripts/validate_leaf_dataset.py \
   --dataset datasets/leaf_yolo \
   --write-report
+
+tar -czf "$DRIVE_ROOT/datasets/leaf_yolo_dataset.tar.gz" datasets/leaf_yolo
+cp datasets/leaf_yolo/validation_report.json "$DRIVE_ROOT/datasets/validation_report.json"
 ```
 
 ## 5. Smoke Test
@@ -83,7 +94,8 @@ python scripts/train_leaf_yolo.py \
   --project runs/leaf_yolo \
   --device 0 \
   --smoke \
-  --export
+  --export \
+  --drive-out "$DRIVE_ROOT/runs/leaf_yolo"
 ```
 
 ## 6. Main Training
@@ -96,7 +108,10 @@ python scripts/train_leaf_yolo.py \
   --models yolo26s.pt yolo26m.pt yolo26x.pt \
   --epochs 180 \
   --imgsz 640 \
-  --export
+  --fine-tune \
+  --finetune-epochs 40 \
+  --export \
+  --drive-out "$DRIVE_ROOT/runs/leaf_yolo"
 ```
 
 Select the final browser model by test recall, mAP50-95, false positives on
@@ -107,7 +122,8 @@ enough in the browser.
 ## 7. Save Outputs
 
 ```bash
-zip -r /content/leaf_yolo_runs.zip runs/leaf_yolo
+zip -r "$DRIVE_ROOT/artifacts/leaf_yolo_runs.zip" runs/leaf_yolo
+cp runs/leaf_yolo/training_summary.json "$DRIVE_ROOT/artifacts/training_summary.json"
 ```
 
 Copy the chosen `best.onnx` into `web/models/best.onnx` to test browser
