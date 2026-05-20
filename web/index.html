@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Leaf Detector</title>
+  <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #101412;
+      color: #eef5ef;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      grid-template-rows: auto 1fr;
+      background: #101412;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 14px 18px;
+      border-bottom: 1px solid #26312b;
+      background: #151b18;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: 0;
+    }
+
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    label {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: #cbd8ce;
+    }
+
+    input {
+      accent-color: #58d68d;
+    }
+
+    button {
+      min-height: 36px;
+      border: 1px solid #3b4a40;
+      background: #213028;
+      color: #eef5ef;
+      border-radius: 8px;
+      padding: 0 12px;
+      font-weight: 650;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background: #2a3d32;
+    }
+
+    main {
+      display: grid;
+      place-items: center;
+      padding: 18px;
+    }
+
+    .stage {
+      position: relative;
+      width: min(100%, 1080px);
+      aspect-ratio: 16 / 9;
+      background: #080a09;
+      overflow: hidden;
+      border: 1px solid #26312b;
+      border-radius: 8px;
+    }
+
+    video,
+    canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+
+    .status {
+      position: absolute;
+      left: 12px;
+      bottom: 12px;
+      max-width: calc(100% - 24px);
+      padding: 8px 10px;
+      border-radius: 8px;
+      background: rgba(10, 15, 12, 0.8);
+      border: 1px solid rgba(180, 210, 190, 0.22);
+      color: #dce8df;
+      font-size: 13px;
+    }
+
+    @media (max-width: 720px) {
+      header {
+        align-items: stretch;
+        flex-direction: column;
+      }
+
+      .controls {
+        justify-content: flex-start;
+      }
+
+      .stage {
+        aspect-ratio: 3 / 4;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Leaf Detector</h1>
+    <div class="controls">
+      <label>
+        Confidence
+        <input id="confidence" type="range" min="0.05" max="0.95" value="0.35" step="0.01">
+      </label>
+      <label>
+        NMS
+        <input id="iou" type="range" min="0.1" max="0.9" value="0.45" step="0.01">
+      </label>
+      <button id="start">Start Camera</button>
+    </div>
+  </header>
+  <main>
+    <section class="stage">
+      <video id="video" playsinline muted></video>
+      <canvas id="overlay"></canvas>
+      <div id="status" class="status">Loading model...</div>
+    </section>
+  </main>
+
+  <script>
+    const MODEL_URL = "models/best.onnx";
+    const INPUT_SIZE = 640;
+    const video = document.querySelector("#video");
+    const overlay = document.querySelector("#overlay");
+    const statusEl = document.querySelector("#status");
+    const startButton = document.querySelector("#start");
+    const confidenceInput = document.querySelector("#confidence");
+    const iouInput = document.querySelector("#iou");
+    const inputCanvas = document.createElement("canvas");
+    inputCanvas.width = INPUT_SIZE;
+    inputCanvas.height = INPUT_SIZE;
+    const inputCtx = inputCanvas.getContext("2d", { willReadFrequently: true });
+    const overlayCtx = overlay.getContext("2d");
+    let session = null;
+    let busy = false;
+    let lastTime = performance.now();
+    let fps = 0;
+
+    function setStatus(text) {
+      statusEl.textContent = text;
+    }
+
+    function resizeOverlay() {
+      const rect = overlay.getBoundingClientRect();
+      const width = Math.max(1, Math.round(rect.width * devicePixelRatio));
+      const height = Math.max(1, Math.round(rect.height * devicePixelRatio));
+      if (overlay.width !== width || overlay.height !== height) {
+        overlay.width = width;
+        overlay.height = height;
+      }
+    }
+
+    function letterbox() {
+      const vw = video.videoWidth;
+      const vh = video.videoHeight;
+      const scale = Math.min(INPUT_SIZE / vw, INPUT_SIZE / vh);
+      const nw = Math.round(vw * scale);
+      const nh = Math.round(vh * scale);
+      const dx = Math.floor((INPUT_SIZE - nw) / 2);
+      const dy = Math.floor((INPUT_SIZE - nh) / 2);
+      inputCtx.fillStyle = "rgb(114, 114, 114)";
+      inputCtx.fillRect(0, 0, INPUT_SIZE, INPUT_SIZE);
+      inputCtx.drawImage(video, 0, 0, vw, vh, dx, dy, nw, nh);
+      return { scale, dx, dy, vw, vh };
+    }
+
+    function imageToTensor() {
+      const imageData = inputCtx.getImageData(0, 0, INPUT_SIZE, INPUT_SIZE).data;
+      const chw = new Float32Array(1 * 3 * INPUT_SIZE * INPUT_SIZE);
+      const plane = INPUT_SIZE * INPUT_SIZE;
+      for (let i = 0, p = 0; i < imageData.length; i += 4, p += 1) {
+        chw[p] = imageData[i] / 255;
+        chw[plane + p] = imageData[i + 1] / 255;
+        chw[plane * 2 + p] = imageData[i + 2] / 255;
+      }
+      return new ort.Tensor("float32", chw, [1, 3, INPUT_SIZE, INPUT_SIZE]);
+    }
+
+    function boxIou(a, b) {
+      const x1 = Math.max(a.x1, b.x1);
+      const y1 = Math.max(a.y1, b.y1);
+      const x2 = Math.min(a.x2, b.x2);
+      const y2 = Math.min(a.y2, b.y2);
+      const inter = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
+      const areaA = Math.max(0, a.x2 - a.x1) * Math.max(0, a.y2 - a.y1);
+      const areaB = Math.max(0, b.x2 - b.x1) * Math.max(0, b.y2 - b.y1);
+      return inter / Math.max(1e-6, areaA + areaB - inter);
+    }
+
+    function nms(boxes, threshold) {
+      const sorted = boxes.slice().sort((a, b) => b.score - a.score);
+      const kept = [];
+      while (sorted.length) {
+        const current = sorted.shift();
+        kept.push(current);
+        for (let i = sorted.length - 1; i >= 0; i -= 1) {
+          if (boxIou(current, sorted[i]) > threshold) sorted.splice(i, 1);
+        }
+      }
+      return kept;
+    }
+
+    function readPrediction(data, dims, index) {
+      if (dims.length === 2) {
+        const c = dims[1];
+        return Array.from(data.slice(index * c, (index + 1) * c));
+      }
+      const cFirst = dims[1] < dims[2];
+      if (cFirst) {
+        const c = dims[1];
+        const n = dims[2];
+        const row = new Array(c);
+        for (let channel = 0; channel < c; channel += 1) row[channel] = data[channel * n + index];
+        return row;
+      }
+      const c = dims[2];
+      return Array.from(data.slice(index * c, (index + 1) * c));
+    }
+
+    function parseDetections(output, meta, confThreshold, iouThreshold) {
+      const data = output.data;
+      const dims = output.dims;
+      const count = dims.length === 2 ? dims[0] : Math.max(dims[1], dims[2]);
+      const boxes = [];
+      for (let i = 0; i < count; i += 1) {
+        const row = readPrediction(data, dims, i);
+        if (row.length < 5) continue;
+        const classScores = row.slice(4);
+        let score = Math.max(...classScores);
+        if (row.length === 6) score = row[4] * row[5];
+        if (score < confThreshold) continue;
+        const cx = row[0];
+        const cy = row[1];
+        const w = row[2];
+        const h = row[3];
+        const x1 = (cx - w / 2 - meta.dx) / meta.scale;
+        const y1 = (cy - h / 2 - meta.dy) / meta.scale;
+        const x2 = (cx + w / 2 - meta.dx) / meta.scale;
+        const y2 = (cy + h / 2 - meta.dy) / meta.scale;
+        boxes.push({
+          x1: Math.max(0, Math.min(meta.vw, x1)),
+          y1: Math.max(0, Math.min(meta.vh, y1)),
+          x2: Math.max(0, Math.min(meta.vw, x2)),
+          y2: Math.max(0, Math.min(meta.vh, y2)),
+          score,
+        });
+      }
+      return nms(boxes, iouThreshold).slice(0, 100);
+    }
+
+    function draw(boxes) {
+      resizeOverlay();
+      overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
+      const sx = overlay.width / video.videoWidth;
+      const sy = overlay.height / video.videoHeight;
+      overlayCtx.lineWidth = Math.max(2, overlay.width / 420);
+      overlayCtx.font = `${Math.max(13, overlay.width / 70)}px system-ui`;
+      overlayCtx.textBaseline = "top";
+      for (const box of boxes) {
+        const x = box.x1 * sx;
+        const y = box.y1 * sy;
+        const w = (box.x2 - box.x1) * sx;
+        const h = (box.y2 - box.y1) * sy;
+        const label = `leaf ${Math.round(box.score * 100)}%`;
+        overlayCtx.strokeStyle = "#58d68d";
+        overlayCtx.fillStyle = "rgba(88, 214, 141, 0.16)";
+        overlayCtx.strokeRect(x, y, w, h);
+        overlayCtx.fillRect(x, y, w, h);
+        const textWidth = overlayCtx.measureText(label).width + 10;
+        overlayCtx.fillStyle = "rgba(12, 22, 16, 0.86)";
+        overlayCtx.fillRect(x, Math.max(0, y - 24), textWidth, 24);
+        overlayCtx.fillStyle = "#effff4";
+        overlayCtx.fillText(label, x + 5, Math.max(2, y - 21));
+      }
+    }
+
+    async function inferLoop() {
+      requestAnimationFrame(inferLoop);
+      if (!session || busy || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
+      busy = true;
+      try {
+        const meta = letterbox();
+        const feeds = { [session.inputNames[0]]: imageToTensor() };
+        const results = await session.run(feeds);
+        const output = results[session.outputNames[0]];
+        const boxes = parseDetections(
+          output,
+          meta,
+          Number(confidenceInput.value),
+          Number(iouInput.value),
+        );
+        draw(boxes);
+        const now = performance.now();
+        fps = fps * 0.85 + (1000 / Math.max(1, now - lastTime)) * 0.15;
+        lastTime = now;
+        setStatus(`${boxes.length} leaves · ${fps.toFixed(1)} FPS`);
+      } catch (error) {
+        setStatus(`Inference error: ${error.message}`);
+      } finally {
+        busy = false;
+      }
+    }
+
+    async function startCamera() {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: false,
+      });
+      video.srcObject = stream;
+      await video.play();
+      resizeOverlay();
+    }
+
+    async function main() {
+      try {
+        ort.env.wasm.numThreads = Math.min(4, navigator.hardwareConcurrency || 4);
+        session = await ort.InferenceSession.create(MODEL_URL, {
+          executionProviders: ["webgpu", "wasm"],
+          graphOptimizationLevel: "all",
+        });
+        setStatus("Model loaded");
+      } catch (error) {
+        setStatus(`Model load failed: ${error.message}`);
+      }
+      startButton.addEventListener("click", async () => {
+        try {
+          await startCamera();
+          startButton.disabled = true;
+          startButton.textContent = "Camera Running";
+        } catch (error) {
+          setStatus(`Camera error: ${error.message}`);
+        }
+      });
+      window.addEventListener("resize", resizeOverlay);
+      inferLoop();
+    }
+
+    main();
+  </script>
+</body>
+</html>

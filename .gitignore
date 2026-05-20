@@ -1,0 +1,12 @@
+raw/
+datasets/
+public/
+hard_negatives/
+runs/
+*.pt
+*.onnx
+*.engine
+*.tflite
+*.zip
+__pycache__/
+*.pyc

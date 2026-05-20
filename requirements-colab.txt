@@ -1,0 +1,8 @@
+ultralytics>=8.3.0
+onnx>=1.16.0
+onnxruntime>=1.18.0
+tensorflow>=2.16.0
+tensorflowjs>=4.20.0
+pyyaml>=6.0
+pillow>=10.0.0
+numpy>=1.26.0
