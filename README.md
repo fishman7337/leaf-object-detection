@@ -16,6 +16,15 @@ It caches `archive.zip`, uploads the prepared YOLO dataset as
 `datasets/leaf_yolo_dataset.tar.gz`, syncs run folders after each model, and
 writes final ZIP/summary artifacts to `artifacts/`.
 
+It also detects the current Drive upload layout directly:
+
+```text
+MyDrive/leaf-object-detection/datasets/archive/PlantVillage_for_object_detection/Dataset
+```
+
+If that folder exists, Colab prepares the single-class dataset from it without
+asking for `archive.zip`.
+
 ## Current Local Status
 
 - Prepared dataset, after running prep: `datasets/leaf_yolo`
