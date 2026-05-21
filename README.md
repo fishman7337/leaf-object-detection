@@ -6,7 +6,9 @@ Open the training notebook in Colab:
 
 [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/fishman7337/leaf-object-detection/blob/main/colab_leaf_yolo_training.ipynb)
 
-The Colab notebook saves everything under:
+The Colab notebook downloads the public Kaggle dataset automatically with
+KaggleHub when no cached dataset exists, so you should not need to upload files
+manually. It saves everything under:
 
 ```text
 MyDrive/leaf-object-detection/
@@ -16,13 +18,14 @@ It caches `archive.zip`, uploads the prepared YOLO dataset as
 `datasets/leaf_yolo_dataset.tar.gz`, syncs run folders after each model, and
 writes final ZIP/summary artifacts to `artifacts/`.
 
-Fastest setup: upload one compressed prepared dataset file:
+Fastest repeat setup: the notebook creates and reuses one compressed prepared
+dataset file:
 
 ```text
 MyDrive/leaf-object-detection/datasets/leaf_yolo_dataset.tar.gz
 ```
 
-Create it locally with:
+If you ever want to create it locally instead, use:
 
 ```powershell
 cd D:\Ken\leaf_detector
@@ -37,7 +40,7 @@ MyDrive/leaf-object-detection/datasets/archive/PlantVillage_for_object_detection
 
 but it no longer uses that loose folder automatically because mounted Google
 Drive is too slow for 50k+ files. Use `leaf_yolo_dataset.tar.gz` or
-`archive.zip` for fast Colab prep.
+automatic KaggleHub download for fast Colab prep.
 
 ## Current Local Status
 
