@@ -1,10 +1,16 @@
 # Colab A100 Leaf YOLO Training
 
 Use a Colab runtime with an A100 GPU. The notebook clones this repository,
-mounts Google Drive, detects your uploaded unzipped dataset at
-`MyDrive/leaf-object-detection/datasets/archive/PlantVillage_for_object_detection/Dataset`,
-uploads the prepared YOLO dataset to Drive, and syncs checkpoints/exports to
-Drive after each model.
+mounts Google Drive, restores `leaf_yolo_dataset.tar.gz` when available, and
+syncs checkpoints/exports to Drive after each model.
+
+Do not use the loose unzipped Drive folder for normal prep. Mounted Google Drive
+is very slow for 50k+ files. Upload one of these instead:
+
+```text
+MyDrive/leaf-object-detection/datasets/leaf_yolo_dataset.tar.gz
+MyDrive/leaf-object-detection/archive.zip
+```
 
 ## 1. Setup
 
@@ -26,8 +32,8 @@ cd leaf-object-detection
 pip install -U -r requirements-colab.txt
 ```
 
-If the unzipped dataset is already in Drive, skip archive/Kaggle upload. If not,
-upload `archive.zip` or `kaggle.json`.
+If `leaf_yolo_dataset.tar.gz` is already in Drive, skip archive/Kaggle upload.
+If not, upload `archive.zip` or `kaggle.json`.
 
 If you uploaded `kaggle.json`, run:
 
