@@ -81,8 +81,15 @@ def extract_archive(archive: Path, raw_dir: Path, no_extract: bool) -> Path:
     if dataset_dir.exists():
         log(f"Using existing extracted dataset: {dataset_dir}")
         return dataset_dir
+    discovered = find_dataset_dir(raw_dir)
+    if discovered is not None:
+        log(f"Using discovered extracted dataset: {discovered}")
+        return discovered
     if no_extract:
-        raise FileNotFoundError(f"Expected extracted dataset at {dataset_dir}")
+        raise FileNotFoundError(
+            f"Expected extracted dataset at {dataset_dir}. "
+            f"Could not find a folder containing images/, labels/, and classes.yaml under {raw_dir}."
+        )
     if not archive.exists():
         raise FileNotFoundError(f"Archive not found: {archive}")
     raw_dir.mkdir(parents=True, exist_ok=True)
@@ -92,6 +99,17 @@ def extract_archive(archive: Path, raw_dir: Path, no_extract: bool) -> Path:
     if not dataset_dir.exists():
         raise FileNotFoundError(f"Archive extracted, but dataset folder was not found at {dataset_dir}")
     return dataset_dir
+
+
+def find_dataset_dir(raw_dir: Path) -> Path | None:
+    if not raw_dir.exists():
+        return None
+    candidates = [raw_dir]
+    candidates.extend(p.parent for p in raw_dir.rglob("classes.yaml"))
+    for candidate in candidates:
+        if (candidate / "images").exists() and (candidate / "labels").exists() and (candidate / "classes.yaml").exists():
+            return candidate
+    return None
 
 
 def parse_yolo_label(path: Path) -> tuple[Box, ...]:
@@ -126,12 +144,15 @@ def load_plantvillage(dataset_dir: Path) -> list[Record]:
 
     images = {p.stem: p for p in images_dir.iterdir() if p.suffix.lower() in IMAGE_EXTS}
     labels = {p.stem: p for p in labels_dir.glob("*.txt")}
+    log(f"Found PlantVillage images: {len(images):,}; labels: {len(labels):,}")
     missing_labels = sorted(set(images) - set(labels))
     missing_images = sorted(set(labels) - set(images))
     if missing_labels or missing_images:
         raise ValueError(
             f"PlantVillage pairing mismatch: {len(missing_labels)} missing labels, "
-            f"{len(missing_images)} orphan labels"
+            f"{len(missing_images)} orphan labels. "
+            f"Missing label examples: {missing_labels[:5]}. "
+            f"Orphan label examples: {missing_images[:5]}."
         )
 
     records: list[Record] = []
