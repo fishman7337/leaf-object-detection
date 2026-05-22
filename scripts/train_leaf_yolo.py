@@ -43,7 +43,7 @@ TRAIN_ARGS = {
     "mixup": 0.05,
     "cutmix": 0.1,
     "cos_lr": True,
-    "multi_scale": True,
+    "multi_scale": False,
 }
 
 
@@ -86,6 +86,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--models", nargs="+", default=["yolo26s.pt", "yolo26m.pt", "yolo26x.pt"])
     parser.add_argument("--epochs", type=int, default=180)
     parser.add_argument("--imgsz", type=int, default=640)
+    parser.add_argument("--batch", type=int, default=None, help="Override batch size. Default uses Ultralytics AutoBatch.")
+    parser.add_argument("--workers", type=int, default=None, help="Override dataloader worker count.")
+    parser.add_argument("--multi-scale", action="store_true", help="Enable multi-scale training. Disabled by default for ROCm stability.")
     parser.add_argument("--smoke", action="store_true", help="Run a short 20-epoch yolo26s smoke test only.")
     parser.add_argument("--export", action="store_true", help="Export best weights to ONNX and TF.js after test evaluation.")
     parser.add_argument("--fine-tune", action="store_true", help="Run a lower-augmentation refinement stage from each best.pt.")
@@ -182,8 +185,13 @@ def main() -> int:
                 "device": args.device,
                 "project": str(project),
                 "name": run_name,
+                "multi_scale": args.multi_scale,
             }
         )
+        if args.batch is not None:
+            train_args["batch"] = args.batch
+        if args.workers is not None:
+            train_args["workers"] = args.workers
         train_result = model.train(**train_args)
         save_dir = Path(train_result.save_dir)
         best_pt = save_dir / "weights" / "best.pt"
@@ -217,6 +225,10 @@ def main() -> int:
                     "name": ft_run_name,
                 }
             )
+            if args.batch is not None:
+                ft_args["batch"] = args.batch
+            if args.workers is not None:
+                ft_args["workers"] = args.workers
             ft_result = ft_model.train(**ft_args)
             ft_save_dir = Path(ft_result.save_dir)
             ft_best_pt = ft_save_dir / "weights" / "best.pt"

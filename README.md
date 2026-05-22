@@ -98,11 +98,13 @@ The smoke test trains `yolo26s.pt` for 20 epochs. The main run trains:
 - `yolo26m.pt`
 - `yolo26x.pt`
 
-Training uses pretrained weights, early stopping, cosine LR, multi-scale main
-training, mosaic closeout, HSV/geometry augmentation, mixup, and cutmix. The
-main Colab run also performs a lower-augmentation fine-tune stage from each
-candidate model's `best.pt`. The final model should be chosen by test recall,
-mAP50-95, false positives on no-leaf images, model size, and browser FPS.
+Training uses pretrained weights, early stopping, cosine LR, fixed 640px main
+training, mosaic closeout, HSV/geometry augmentation, mixup, and cutmix.
+Multi-scale training is available with `--multi-scale`, but fixed sizing is the
+default because it is more stable on ROCm/AMD GPUs. The main Colab run also
+performs a lower-augmentation fine-tune stage from each candidate model's
+`best.pt`. The final model should be chosen by test recall, mAP50-95, false
+positives on no-leaf images, model size, and browser FPS.
 
 ## Deployment
 
