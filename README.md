@@ -1,128 +1,189 @@
 # Leaf Object Detection
 
-Single-class YOLO dataset and training pipeline for live leaf detection.
+[![CI](https://github.com/fishman7337/leaf-object-detection/actions/workflows/ci.yml/badge.svg)](https://github.com/fishman7337/leaf-object-detection/actions/workflows/ci.yml)
+[![Python 3.10–3.12](https://img.shields.io/badge/python-3.10%E2%80%933.12-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![YOLO](https://img.shields.io/badge/detector-YOLO-111F68)](https://docs.ultralytics.com/)
 
-Open the training notebook in Colab:
+Reproducible single-class YOLO pipeline for preparing mixed leaf imagery,
+validating annotations, training detector variants on Colab, exporting ONNX or
+TensorFlow.js assets, and prototyping browser inference.
 
-[![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/fishman7337/leaf-object-detection/blob/main/colab_leaf_yolo_training.ipynb)
+## Evidence and interpretation
 
-The Colab notebook downloads the public Kaggle dataset automatically with
-KaggleHub when no cached dataset exists, so you should not need to upload files
-manually. It saves everything under:
+| Evidence-backed measure | Current repository evidence |
+| --- | --- |
+| Recorded preparation run | **57,164 images** and **63,225 boxes**, comprising 54,293 PlantVillage images, 2,571 PlantDoc images, and 300 synthetic negatives. |
+| Deterministic split | **46,008 train / 5,460 validation / 5,696 test images** with portable, collision-resistant filenames. |
+
+The qualitative outcome is a reproducible single-class leaf-detection dataset pipeline with validation and training entry points. Counts describe prepared data, not detector accuracy; no benchmark claim is made without a pinned model run.
+
+## Overview
+
+The project combines centered PlantVillage images, PlantDoc scenes, and
+synthetic hard negatives into one `leaf` class. Its tooling validates image and
+label pairing, converts Pascal VOC boxes to normalized YOLO coordinates,
+creates deterministic train/validation/test splits, trains candidate detectors,
+and records evaluation/export metadata.
+
+The project is designed for research and education. It does not include the
+source datasets, trained weights, or generated runs in Git.
+
+## Recorded dataset composition
+
+The latest documented preparation run produced the following counts. Regenerate
+`datasets/leaf_yolo/stats.json` and `validation_report.json` before citing these
+numbers for a new dataset revision.
+
+| Measure | Count |
+| --- | ---: |
+| Images | 57,164 |
+| Leaf bounding boxes | 63,225 |
+| PlantVillage images | 54,293 |
+| PlantDoc images | 2,571 |
+| Synthetic hard negatives | 300 |
+| Training images / boxes | 46,008 / 51,905 |
+| Validation images / boxes | 5,460 / 5,432 |
+| Test images / boxes | 5,696 / 5,888 |
+
+These counts are pipeline outputs, not model-performance claims. Final model
+quality must be reported from a fresh test evaluation using recall, precision,
+mAP50–95, false positives on negative images, model size, and browser latency.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    A["PlantVillage YOLO archive"] --> D["Dataset preparation"]
+    B["PlantDoc Pascal VOC"] --> C["VOC-to-YOLO conversion"]
+    C --> D
+    N["Hard-negative images"] --> D
+    D --> V["Pairing, box, leakage, and image validation"]
+    V --> T["YOLO training and fine-tuning"]
+    T --> E["Test evaluation"]
+    E --> O["ONNX and TensorFlow.js export"]
+    O --> W["Browser demo scaffold"]
+```
+
+## Repository structure
 
 ```text
-MyDrive/leaf-object-detection/
+.
+|-- .github/workflows/ci.yml       # Python quality and test matrix
+|-- scripts/                       # Preparation, validation, training, export
+|-- tests/                         # Offline deterministic unit tests
+|-- web/                           # Browser ONNX demo scaffold
+|-- colab_leaf_yolo_training.ipynb # Colab orchestration notebook
+|-- COLAB_A100_STEPS.md            # A100 runbook
+|-- pyproject.toml                 # Package and quality-tool configuration
+`-- requirements-colab.txt         # Full Colab training/export stack
 ```
 
-It caches `archive.zip`, uploads the prepared YOLO dataset as
-`datasets/leaf_yolo_dataset.tar.gz`, syncs run folders after each model, and
-writes final ZIP/summary artifacts to `artifacts/`.
+## Installation
 
-Fastest repeat setup: the notebook creates and reuses one compressed prepared
-dataset file:
+For dataset tooling and offline tests:
 
-```text
-MyDrive/leaf-object-detection/datasets/leaf_yolo_dataset.tar.gz
+```bash
+python -m venv .venv
+source .venv/bin/activate  # Windows PowerShell: .venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -e ".[dev]"
 ```
 
-If you ever want to create it locally instead, use:
+For training and export, use Colab or install the larger optional stack:
 
-```powershell
-cd D:\Ken\leaf_detector
-tar -czf leaf_yolo_dataset.tar.gz datasets\leaf_yolo
+```bash
+python -m pip install -e ".[train]"
 ```
 
-The notebook can detect the current loose Drive upload layout:
+## Usage
 
-```text
-MyDrive/leaf-object-detection/datasets/archive/PlantVillage_for_object_detection/Dataset
-```
+Prepare a dataset from a local archive and optional additional sources:
 
-but it no longer uses that loose folder automatically because mounted Google
-Drive is too slow for 50k+ files. Use `leaf_yolo_dataset.tar.gz` or
-automatic KaggleHub download for fast Colab prep.
-
-## Current Local Status
-
-- Prepared dataset, after running prep: `datasets/leaf_yolo`
-- Class set: `nc: 1`, `names: ['leaf']`
-- Total images: `57,164`
-- Total leaf boxes: `63,225`
-- Empty-label hard negatives: `300`
-- Sources:
-  - `54,293` images from the provided PlantVillage YOLO archive
-  - `2,571` public PlantDoc mixed-scene images converted from Pascal VOC to YOLO
-  - `300` synthetic no-leaf negatives
-- Split:
-  - Train: `46,008` images, `51,905` boxes
-  - Val: `5,460` images, `5,432` boxes
-  - Test: `5,696` images, `5,888` boxes
-
-The prepared dataset uses hardlinks for images, so it does not duplicate the
-full image storage on disk.
-
-## Important Files
-
-- `scripts/prepare_leaf_dataset.py`: extracts, validates, merges, splits, and rewrites labels to class `0`
-- `scripts/validate_leaf_dataset.py`: checks image-label pairing, YOLO box validity, and class IDs
-- `scripts/import_plantdoc_git.py`: imports PlantDoc directly from Git blobs, including Windows-hostile filenames
-- `scripts/generate_synthetic_negatives.py`: creates temporary no-leaf negative images
-- `scripts/train_leaf_yolo.py`: Colab A100 training, test evaluation, ONNX export, and TF.js export
-- `datasets/leaf_yolo/data.yaml`: final YOLO dataset config, generated after prep
-- `datasets/leaf_yolo/validation_report.json`: latest validation report, generated after validation
-- `COLAB_A100_STEPS.md`: exact Colab commands
-- `web/`: browser ONNX demo scaffold
-
-## Rebuild Dataset Locally
-
-```powershell
-python scripts\prepare_leaf_dataset.py `
-  --archive archive.zip `
-  --work-dir . `
-  --extra-yolo-dir public\plantdoc_yolo `
-  --hard-negatives-dir hard_negatives\synthetic `
+```bash
+python scripts/prepare_leaf_dataset.py \
+  --archive archive.zip \
+  --work-dir . \
+  --extra-yolo-dir public/plantdoc_yolo \
+  --hard-negatives-dir hard_negatives/synthetic \
   --force
+```
 
-python scripts\validate_leaf_dataset.py `
-  --dataset datasets\leaf_yolo `
+Validate pairing, image readability, class IDs, normalized boxes, and split
+leakage:
+
+```bash
+python scripts/validate_leaf_dataset.py \
+  --dataset datasets/leaf_yolo \
   --write-report
 ```
 
-## Train on Colab A100
+Generate temporary synthetic negatives:
 
-Follow `COLAB_A100_STEPS.md`.
+```bash
+python scripts/generate_synthetic_negatives.py --count 300 --seed 42
+```
 
-The smoke test trains `yolo26s.pt` for 20 epochs. The main run trains:
+For Colab A100 training, open the notebook below and follow
+[`COLAB_A100_STEPS.md`](COLAB_A100_STEPS.md).
 
-- `yolo26s.pt`
-- `yolo26m.pt`
-- `yolo26x.pt`
+[![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/fishman7337/leaf-object-detection/blob/main/colab_leaf_yolo_training.ipynb)
 
-Training uses pretrained weights, early stopping, cosine LR, fixed 640px main
-training, mosaic closeout, HSV/geometry augmentation, mixup, and cutmix.
-Multi-scale training is available with `--multi-scale`, but fixed sizing is the
-default because it is more stable on ROCm/AMD GPUs. The main Colab run also
-performs a lower-augmentation fine-tune stage from each candidate model's
-`best.pt`. The final model should be chosen by test recall, mAP50-95, false
-positives on no-leaf images, model size, and browser FPS.
+## Training and evaluation
+
+The main run compares `yolo26s.pt`, `yolo26m.pt`, and `yolo26x.pt` with a
+640-pixel input, pretrained weights, deterministic seed 42, early stopping,
+cosine learning rate, and configurable fine-tuning. A 20-epoch `yolo26s` smoke
+run is available before the full experiment:
+
+```bash
+python scripts/train_leaf_yolo.py --smoke --data datasets/leaf_yolo/data.yaml
+```
+
+Use `--export` only after confirming test evaluation. The training script writes
+`training_summary.json` with metrics and artifact paths.
+
+## Testing
+
+Run the complete offline quality gate:
+
+```bash
+python -m ruff check scripts tests
+python -m ruff format --check scripts tests
+python -m pytest --cov=scripts --cov-report=term-missing
+python -m compileall -q scripts tests
+```
+
+CI runs these checks on Python 3.10, 3.11, and 3.12. Dataset preparation and GPU
+training are intentionally excluded because they require external data and
+specialized compute.
 
 ## Deployment
 
-Exported ONNX models can be tested in `web/index.html` after placing the chosen
-model at:
+Place an exported ONNX model at `web/models/best.onnx`, then serve `web/` from a
+local HTTP server. Start with the smallest detector whose measured recall and
+false-positive behavior meet the deployment requirement; browser FPS must be
+measured on the actual target device.
 
-```text
-leaf_detector/web/models/best.onnx
-```
+## Limitations
 
-For a browser-first deployment, start with `yolo26s` or `yolo26m`. Keep `yolo26x`
-only if the browser FPS is acceptable.
+- PlantVillage is dominated by centered, controlled images and does not fully
+  represent live webcam scenes.
+- Synthetic negatives supplement but do not replace real no-leaf camera frames.
+- The recorded dataset counts can change when upstream datasets or split logic change.
+- No production latency, accuracy, or user-impact claim is made without a
+  reproducible evaluation artifact.
 
-## Notes
+## Data, privacy, and licensing
 
-The original PlantVillage data is mostly centered 256x256 single-leaf imagery.
-The PlantDoc merge and hard negatives reduce that bias, but real webcam images
-from the final environment are still the best way to prove live performance.
+Do not commit Kaggle credentials, private imagery, datasets, model weights, or
+generated runs. The referenced PlantVillage object-detection dataset is hosted
+under CC BY-NC-SA 4.0; verify every upstream source and model license before
+redistribution or commercial use.
 
-The original PlantVillage object-detection dataset is hosted on Kaggle under
-CC BY-NC-SA 4.0. Check that license before any commercial deployment.
+This repository currently does not declare a repository-wide software license.
+Until the owner selects one, reuse beyond applicable law requires permission.
+
+## Contributing
+
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for setup, quality gates, pull-request
+expectations, and data-handling rules.

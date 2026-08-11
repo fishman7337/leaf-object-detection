@@ -17,6 +17,11 @@ from PIL import Image, ImageDraw, ImageFilter
 
 
 def parse_args() -> argparse.Namespace:
+    """Parse synthetic-negative generation arguments.
+
+    Returns:
+        Parsed command-line namespace.
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", type=Path, default=Path("hard_negatives/synthetic"))
     parser.add_argument("--count", type=int, default=300)
@@ -26,12 +31,30 @@ def parse_args() -> argparse.Namespace:
 
 
 def random_color(rng: random.Random, allow_green: bool = True) -> tuple[int, int, int]:
+    """Generate a pseudo-random RGB color.
+
+    Args:
+        rng: Seeded random number generator.
+        allow_green: Whether to sometimes bias the output toward green.
+
+    Returns:
+        Three-channel RGB tuple.
+    """
     if allow_green and rng.random() < 0.35:
         return (rng.randint(20, 130), rng.randint(90, 180), rng.randint(20, 120))
     return (rng.randint(20, 230), rng.randint(20, 230), rng.randint(20, 230))
 
 
 def gradient_image(rng: random.Random, size: int) -> Image.Image:
+    """Create a square directional-gradient RGB image.
+
+    Args:
+        rng: Seeded random number generator.
+        size: Width and height in pixels.
+
+    Returns:
+        Generated RGB image.
+    """
     c1 = random_color(rng)
     c2 = random_color(rng)
     angle = rng.random() * math.pi
@@ -43,14 +66,34 @@ def gradient_image(rng: random.Random, size: int) -> Image.Image:
 
 
 def noise_image(rng: random.Random, size: int) -> Image.Image:
+    """Create a square blurred-noise RGB image.
+
+    Args:
+        rng: Seeded random number generator.
+        size: Width and height in pixels.
+
+    Returns:
+        Generated RGB image.
+    """
     base = np.array(random_color(rng), dtype=np.int16)
-    noise = np.random.default_rng(rng.randint(0, 2**32 - 1)).integers(-70, 71, size=(size, size, 3), dtype=np.int16)
+    noise = np.random.default_rng(rng.randint(0, 2**32 - 1)).integers(
+        -70, 71, size=(size, size, 3), dtype=np.int16
+    )
     arr = np.clip(base + noise, 0, 255).astype(np.uint8)
     img = Image.fromarray(arr, "RGB")
     return img.filter(ImageFilter.GaussianBlur(radius=rng.uniform(0.3, 2.2)))
 
 
 def geometric_image(rng: random.Random, size: int) -> Image.Image:
+    """Create a square abstract image with translucent geometric shapes.
+
+    Args:
+        rng: Seeded random number generator.
+        size: Width and height in pixels.
+
+    Returns:
+        Generated RGB image.
+    """
     img = gradient_image(rng, size)
     draw = ImageDraw.Draw(img, "RGBA")
     for _ in range(rng.randint(15, 45)):
@@ -67,6 +110,11 @@ def geometric_image(rng: random.Random, size: int) -> Image.Image:
 
 
 def main() -> int:
+    """Generate the requested deterministic hard-negative image set.
+
+    Returns:
+        Process exit status. Successful generation returns zero.
+    """
     args = parse_args()
     rng = random.Random(args.seed)
     images_dir = args.out.resolve()

@@ -1,0 +1,86 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "leaf-object-detection"
+version = "0.1.0"
+description = "Reproducible single-class YOLO dataset preparation, validation, training, and browser-export pipeline for leaf detection."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+  { name = "Goh Kun Ming" }
+]
+keywords = [
+  "computer-vision",
+  "leaf-detection",
+  "object-detection",
+  "onnx",
+  "ultralytics",
+  "yolo"
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Education",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+  "Topic :: Scientific/Engineering :: Image Processing"
+]
+dependencies = [
+  "numpy>=1.26,<3",
+  "pillow>=10,<13",
+  "pyyaml>=6,<7"
+]
+
+[project.optional-dependencies]
+train = [
+  "kaggle>=1.6,<2",
+  "kagglehub>=0.3,<1",
+  "onnx>=1.16,<2",
+  "onnxruntime>=1.18,<2",
+  "tensorflow>=2.16,<3",
+  "tensorflowjs>=4.20,<5",
+  "ultralytics>=8.3,<9"
+]
+dev = [
+  "pytest>=8,<10",
+  "pytest-cov>=5,<8",
+  "ruff>=0.12,<1"
+]
+
+[project.urls]
+Repository = "https://github.com/fishman7337/leaf-object-detection"
+Issues = "https://github.com/fishman7337/leaf-object-detection/issues"
+
+[tool.setuptools]
+packages = ["scripts"]
+
+[tool.pytest.ini_options]
+addopts = "-ra --strict-config --strict-markers"
+testpaths = ["tests"]
+
+[tool.coverage.run]
+branch = true
+source = ["scripts"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+extend-exclude = ["colab_leaf_yolo_training.ipynb"]
+
+[tool.ruff.lint]
+select = ["B", "D", "E", "F", "I", "SIM", "UP"]
+ignore = ["D203", "D213"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["D"]

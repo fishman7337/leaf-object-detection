@@ -15,37 +15,92 @@ import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 
 
 def parse_args() -> argparse.Namespace:
+    """Parse PlantDoc Git-import arguments.
+
+    Returns:
+        Parsed command-line namespace.
+    """
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--repo", type=Path, default=Path("public/PlantDoc-Object-Detection-Dataset"))
+    parser.add_argument(
+        "--repo", type=Path, default=Path("public/PlantDoc-Object-Detection-Dataset")
+    )
     parser.add_argument("--out", type=Path, default=Path("public/plantdoc_yolo"))
     parser.add_argument("--force", action="store_true")
     return parser.parse_args()
 
 
 def git_text(repo: Path, *args: str) -> str:
-    return subprocess.check_output(["git", "-C", str(repo), *args], text=True, encoding="utf-8", errors="replace")
+    """Run a Git command and decode its text output.
+
+    Args:
+        repo: Git repository root.
+        *args: Git subcommand and arguments.
+
+    Returns:
+        Decoded standard output.
+    """
+    return subprocess.check_output(
+        ["git", "-C", str(repo), *args], text=True, encoding="utf-8", errors="replace"
+    )
 
 
 def git_bytes(repo: Path, path: str) -> bytes:
+    """Read one tracked path directly from the repository's HEAD tree.
+
+    Args:
+        repo: Git repository root.
+        path: Repository-relative blob path.
+
+    Returns:
+        Raw blob content.
+    """
     return subprocess.check_output(["git", "-C", str(repo), "show", f"HEAD:{path}"])
 
 
 def safe_stem(text: str) -> str:
+    """Sanitize a potentially Windows-hostile filename stem.
+
+    Args:
+        text: Source stem.
+
+    Returns:
+        Portable stem capped at 120 characters.
+    """
     text = re.sub(r"[^A-Za-z0-9_.-]+", "_", text)
     return text.strip("._")[:120] or "image"
 
 
 def find_text(root: ET.Element, path: str, default: str = "") -> str:
+    """Read and trim optional XML element text.
+
+    Args:
+        root: XML search root.
+        path: ElementTree path expression.
+        default: Fallback when the element or text is absent.
+
+    Returns:
+        Trimmed element text or the default.
+    """
     node = root.find(path)
     return node.text.strip() if node is not None and node.text else default
 
 
 def parse_xml(xml_bytes: bytes) -> tuple[int, int, list[tuple[float, float, float, float]]]:
+    """Convert Pascal VOC annotations to normalized YOLO boxes.
+
+    Args:
+        xml_bytes: Pascal VOC XML document.
+
+    Returns:
+        Image width, image height, and normalized boxes.
+
+    Raises:
+        ValueError: If image dimensions are missing or invalid.
+    """
     root = ET.fromstring(xml_bytes)
     width = int(float(find_text(root, "size/width", "0")))
     height = int(float(find_text(root, "size/height", "0")))
@@ -73,6 +128,11 @@ def parse_xml(xml_bytes: bytes) -> tuple[int, int, list[tuple[float, float, floa
 
 
 def main() -> int:
+    """Import PlantDoc blobs into a portable single-class YOLO tree.
+
+    Returns:
+        Process exit status. Successful import returns zero.
+    """
     args = parse_args()
     repo = args.repo.resolve()
     out = args.out.resolve()
@@ -87,9 +147,15 @@ def main() -> int:
         shutil.rmtree(out)
     out.mkdir(parents=True, exist_ok=True)
 
-    paths = [line for line in git_text(repo, "ls-tree", "-r", "--name-only", "HEAD").splitlines() if line]
+    paths = [
+        line for line in git_text(repo, "ls-tree", "-r", "--name-only", "HEAD").splitlines() if line
+    ]
     path_set = set(paths)
-    xml_paths = [p for p in paths if p.lower().endswith(".xml") and (p.startswith("TRAIN/") or p.startswith("TEST/"))]
+    xml_paths = [
+        p
+        for p in paths
+        if p.lower().endswith(".xml") and (p.startswith("TRAIN/") or p.startswith("TEST/"))
+    ]
     imported = 0
     skipped = 0
     missing_images = 0
@@ -99,7 +165,9 @@ def main() -> int:
         base = xml_path.rsplit(".", 1)[0]
         image_path = next((base + ext for ext in IMAGE_EXTS if base + ext in path_set), None)
         if image_path is None:
-            image_path = next((base + ext.upper() for ext in IMAGE_EXTS if base + ext.upper() in path_set), None)
+            image_path = next(
+                (base + ext.upper() for ext in IMAGE_EXTS if base + ext.upper() in path_set), None
+            )
         if image_path is None:
             missing_images += 1
             continue
