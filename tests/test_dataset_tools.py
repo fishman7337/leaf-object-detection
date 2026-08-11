@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import random
+import sys
 from pathlib import Path
 
 import pytest
 
-from scripts.generate_synthetic_negatives import gradient_image, noise_image
+from scripts.generate_synthetic_negatives import gradient_image, main, noise_image
 from scripts.import_plantdoc_git import parse_xml, safe_stem
 from scripts.prepare_leaf_dataset import (
     Box,
@@ -127,3 +128,17 @@ def test_synthetic_generators_create_reproducible_rgb_images() -> None:
     assert first.mode == noise.mode == "RGB"
     assert first.size == noise.size == (24, 24)
     assert first.tobytes() == second.tobytes()
+
+
+@pytest.mark.parametrize("option", ["--count", "--size"])
+def test_synthetic_generator_rejects_non_positive_dimensions(
+    option: str, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["generate_synthetic_negatives.py", "--out", str(tmp_path), option, "0"],
+    )
+
+    with pytest.raises(ValueError, match="greater than zero"):
+        main()

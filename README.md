@@ -5,8 +5,10 @@
 [![YOLO](https://img.shields.io/badge/detector-YOLO-111F68)](https://docs.ultralytics.com/)
 
 Reproducible single-class YOLO pipeline for preparing mixed leaf imagery,
-validating annotations, training detector variants on Colab, exporting ONNX or
-TensorFlow.js assets, and prototyping browser inference.
+validating annotations, training detector variants on Colab, exporting ONNX,
+and prototyping browser inference. TensorFlow.js conversion remains a
+best-effort optional step because its current Python dependency stack is not
+compatible with the repository's Python 3.12 training environment.
 
 ## Evidence and interpretation
 
@@ -60,7 +62,7 @@ flowchart LR
     D --> V["Pairing, box, leakage, and image validation"]
     V --> T["YOLO training and fine-tuning"]
     T --> E["Test evaluation"]
-    E --> O["ONNX and TensorFlow.js export"]
+    E --> O["ONNX export and optional TF.js conversion"]
     O --> W["Browser demo scaffold"]
 ```
 
@@ -140,7 +142,9 @@ python scripts/train_leaf_yolo.py --smoke --data datasets/leaf_yolo/data.yaml
 ```
 
 Use `--export` only after confirming test evaluation. The training script writes
-`training_summary.json` with metrics and artifact paths.
+`training_summary.json` with metrics and artifact paths. ONNX is the supported
+export target; the summary records a non-fatal `tfjs_error` when a separately
+managed TensorFlow.js converter is unavailable or incompatible.
 
 ## Testing
 
@@ -170,6 +174,8 @@ measured on the actual target device.
   represent live webcam scenes.
 - Synthetic negatives supplement but do not replace real no-leaf camera frames.
 - The recorded dataset counts can change when upstream datasets or split logic change.
+- TensorFlow.js conversion is best-effort and is not part of the supported Python 3.12
+  training dependency set because the current upstream converter dependencies conflict.
 - No production latency, accuracy, or user-impact claim is made without a
   reproducible evaluation artifact.
 

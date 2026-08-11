@@ -62,7 +62,7 @@ def gradient_image(rng: random.Random, size: int) -> Image.Image:
     yy, xx = np.mgrid[0:size, 0:size]
     t = np.clip(((xx * ax + yy * ay) / size + 1.0) / 2.0, 0.0, 1.0)[..., None]
     arr = np.array(c1, dtype=np.float32) * (1.0 - t) + np.array(c2, dtype=np.float32) * t
-    return Image.fromarray(arr.astype(np.uint8), "RGB")
+    return Image.fromarray(arr.astype(np.uint8))
 
 
 def noise_image(rng: random.Random, size: int) -> Image.Image:
@@ -80,7 +80,7 @@ def noise_image(rng: random.Random, size: int) -> Image.Image:
         -70, 71, size=(size, size, 3), dtype=np.int16
     )
     arr = np.clip(base + noise, 0, 255).astype(np.uint8)
-    img = Image.fromarray(arr, "RGB")
+    img = Image.fromarray(arr)
     return img.filter(ImageFilter.GaussianBlur(radius=rng.uniform(0.3, 2.2)))
 
 
@@ -116,6 +116,10 @@ def main() -> int:
         Process exit status. Successful generation returns zero.
     """
     args = parse_args()
+    if args.count <= 0:
+        raise ValueError("count must be greater than zero")
+    if args.size <= 0:
+        raise ValueError("size must be greater than zero")
     rng = random.Random(args.seed)
     images_dir = args.out.resolve()
     images_dir.mkdir(parents=True, exist_ok=True)
