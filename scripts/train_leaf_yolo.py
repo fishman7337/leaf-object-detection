@@ -14,7 +14,6 @@ from pathlib import Path
 
 from ultralytics import YOLO
 
-
 TRAIN_ARGS = {
     "imgsz": 640,
     "epochs": 180,
@@ -79,6 +78,11 @@ FINETUNE_ARGS = {
 
 
 def parse_args() -> argparse.Namespace:
+    """Parse detector training, evaluation, and export arguments.
+
+    Returns:
+        Parsed command-line namespace.
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data", type=Path, default=Path("datasets/leaf_yolo/data.yaml"))
     parser.add_argument("--project", type=Path, default=Path("runs/leaf_yolo"))
@@ -86,18 +90,53 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--models", nargs="+", default=["yolo26s.pt", "yolo26m.pt", "yolo26x.pt"])
     parser.add_argument("--epochs", type=int, default=180)
     parser.add_argument("--imgsz", type=int, default=640)
-    parser.add_argument("--batch", type=int, default=None, help="Override batch size. Default uses Ultralytics AutoBatch.")
-    parser.add_argument("--workers", type=int, default=None, help="Override dataloader worker count.")
-    parser.add_argument("--multi-scale", action="store_true", help="Enable multi-scale training. Disabled by default for ROCm stability.")
-    parser.add_argument("--smoke", action="store_true", help="Run a short 20-epoch yolo26s smoke test only.")
-    parser.add_argument("--export", action="store_true", help="Export best weights to ONNX and TF.js after test evaluation.")
-    parser.add_argument("--fine-tune", action="store_true", help="Run a lower-augmentation refinement stage from each best.pt.")
+    parser.add_argument(
+        "--batch",
+        type=int,
+        default=None,
+        help="Override batch size. Default uses Ultralytics AutoBatch.",
+    )
+    parser.add_argument(
+        "--workers", type=int, default=None, help="Override dataloader worker count."
+    )
+    parser.add_argument(
+        "--multi-scale",
+        action="store_true",
+        help="Enable multi-scale training. Disabled by default for ROCm stability.",
+    )
+    parser.add_argument(
+        "--smoke", action="store_true", help="Run a short 20-epoch yolo26s smoke test only."
+    )
+    parser.add_argument(
+        "--export",
+        action="store_true",
+        help="Export best weights to ONNX and TF.js after test evaluation.",
+    )
+    parser.add_argument(
+        "--fine-tune",
+        action="store_true",
+        help="Run a lower-augmentation refinement stage from each best.pt.",
+    )
     parser.add_argument("--finetune-epochs", type=int, default=40)
-    parser.add_argument("--drive-out", type=Path, default=None, help="Optional Google Drive output folder to sync runs into.")
+    parser.add_argument(
+        "--drive-out",
+        type=Path,
+        default=None,
+        help="Optional Google Drive output folder to sync runs into.",
+    )
     return parser.parse_args()
 
 
 def metric_value(metrics: object, name: str) -> float | None:
+    """Read an optional scalar metric from an Ultralytics result.
+
+    Args:
+        metrics: Ultralytics metrics object.
+        name: Attribute name on its box-metrics object.
+
+    Returns:
+        Floating-point value when available and numeric, otherwise ``None``.
+    """
     box = getattr(metrics, "box", None)
     if box is None:
         return None
@@ -111,17 +150,35 @@ def metric_value(metrics: object, name: str) -> float | None:
 
 
 def export_model(best_pt: Path, data_yaml: Path, imgsz: int) -> dict[str, str]:
+    """Export trained weights to ONNX and, when possible, TensorFlow.js.
+
+    Args:
+        best_pt: Best PyTorch checkpoint.
+        data_yaml: YOLO dataset configuration.
+        imgsz: Export input size.
+
+    Returns:
+        Exported paths and any non-fatal TensorFlow.js error.
+    """
     model = YOLO(str(best_pt))
     exported = {}
     exported["onnx"] = str(model.export(format="onnx", imgsz=imgsz, simplify=True, dynamic=False))
     try:
-        exported["tfjs"] = str(model.export(format="tfjs", imgsz=imgsz, dynamic=False, data=str(data_yaml)))
+        exported["tfjs"] = str(
+            model.export(format="tfjs", imgsz=imgsz, dynamic=False, data=str(data_yaml))
+        )
     except Exception as exc:  # noqa: BLE001 - keep ONNX even if TF.js dependencies fail.
         exported["tfjs_error"] = repr(exc)
     return exported
 
 
 def sync_path(src: Path, dst: Path) -> None:
+    """Replace a destination with a copied file or directory.
+
+    Args:
+        src: Existing source path; missing paths are ignored.
+        dst: Destination path.
+    """
     if not src.exists():
         return
     dst.parent.mkdir(parents=True, exist_ok=True)
@@ -134,6 +191,13 @@ def sync_path(src: Path, dst: Path) -> None:
 
 
 def sync_run_to_drive(save_dir: Path, project: Path, drive_out: Path | None) -> None:
+    """Copy run output and its summary to an optional Drive directory.
+
+    Args:
+        save_dir: Ultralytics run directory.
+        project: Local project output root.
+        drive_out: Optional mounted Drive destination.
+    """
     if drive_out is None:
         return
     drive_out = drive_out.resolve()
@@ -144,10 +208,26 @@ def sync_run_to_drive(save_dir: Path, project: Path, drive_out: Path | None) -> 
     print(f"Synced run outputs to {drive_out}", flush=True)
 
 
-def evaluate_and_export(best_pt: Path, data_yaml: Path, imgsz: int, device: str, export: bool) -> dict[str, object]:
+def evaluate_and_export(
+    best_pt: Path, data_yaml: Path, imgsz: int, device: str, export: bool
+) -> dict[str, object]:
+    """Evaluate one checkpoint on the test split and optionally export it.
+
+    Args:
+        best_pt: Best model checkpoint.
+        data_yaml: YOLO dataset configuration.
+        imgsz: Evaluation input size.
+        device: Ultralytics device selector.
+        export: Whether to produce deployment artifacts.
+
+    Returns:
+        Serializable metrics and export metadata.
+    """
     print(f"\n=== Test evaluation for {best_pt} ===", flush=True)
     test_model = YOLO(str(best_pt))
-    metrics = test_model.val(data=str(data_yaml), split="test", imgsz=imgsz, device=device, plots=True)
+    metrics = test_model.val(
+        data=str(data_yaml), split="test", imgsz=imgsz, device=device, plots=True
+    )
     summary: dict[str, object] = {
         "best_pt": str(best_pt),
         "map50": metric_value(metrics, "map50"),
@@ -163,6 +243,11 @@ def evaluate_and_export(best_pt: Path, data_yaml: Path, imgsz: int, device: str,
 
 
 def main() -> int:
+    """Train, evaluate, optionally fine-tune, and summarize detector variants.
+
+    Returns:
+        Process exit status. Successful completion returns zero.
+    """
     args = parse_args()
     data_yaml = args.data.resolve()
     project = args.project.resolve()
@@ -202,7 +287,9 @@ def main() -> int:
             "save_dir": str(save_dir),
             "stage": "main",
         }
-        summary.update(evaluate_and_export(best_pt, data_yaml, args.imgsz, args.device, args.export))
+        summary.update(
+            evaluate_and_export(best_pt, data_yaml, args.imgsz, args.device, args.export)
+        )
         run_summary.append(summary)
 
         summary_path = project / "training_summary.json"
@@ -239,7 +326,9 @@ def main() -> int:
                 "stage": "fine_tune",
                 "base_best_pt": str(best_pt),
             }
-            ft_summary.update(evaluate_and_export(ft_best_pt, data_yaml, args.imgsz, args.device, args.export))
+            ft_summary.update(
+                evaluate_and_export(ft_best_pt, data_yaml, args.imgsz, args.device, args.export)
+            )
             run_summary.append(ft_summary)
             summary_path.write_text(json.dumps(run_summary, indent=2), encoding="utf-8")
             sync_run_to_drive(ft_save_dir, project, args.drive_out)

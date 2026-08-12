@@ -12,11 +12,15 @@ from pathlib import Path
 import yaml
 from PIL import Image
 
-
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 
 
 def parse_args() -> argparse.Namespace:
+    """Parse dataset-validation arguments.
+
+    Returns:
+        Parsed command-line namespace.
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset", type=Path, default=Path("datasets/leaf_yolo"))
     parser.add_argument("--write-report", action="store_true")
@@ -24,10 +28,29 @@ def parse_args() -> argparse.Namespace:
 
 
 def fail(message: str) -> None:
+    """Raise a validation error with a user-facing message.
+
+    Args:
+        message: Validation failure detail.
+
+    Raises:
+        ValueError: Always raised with ``message``.
+    """
     raise ValueError(message)
 
 
 def read_yaml(path: Path) -> dict:
+    """Read the required YOLO data configuration.
+
+    Args:
+        path: YAML file path.
+
+    Returns:
+        Parsed YAML mapping.
+
+    Raises:
+        ValueError: If the configuration file is missing.
+    """
     if not path.exists():
         fail(f"Missing data.yaml: {path}")
     with path.open("r", encoding="utf-8") as handle:
@@ -35,6 +58,17 @@ def read_yaml(path: Path) -> dict:
 
 
 def validate_label(path: Path) -> tuple[int, int]:
+    """Validate one single-class normalized YOLO label file.
+
+    Args:
+        path: Label file path.
+
+    Returns:
+        Box count and an indicator for a non-empty label.
+
+    Raises:
+        ValueError: If a row has an invalid class, shape, or coordinate.
+    """
     text = path.read_text(encoding="utf-8").strip()
     if not text:
         return 0, 0
@@ -55,6 +89,18 @@ def validate_label(path: Path) -> tuple[int, int]:
 
 
 def validate_split(dataset: Path, split: str) -> dict[str, int]:
+    """Validate image-label pairing and readability for one dataset split.
+
+    Args:
+        dataset: Prepared dataset root.
+        split: Split name such as ``train``, ``val``, or ``test``.
+
+    Returns:
+        Counts for images, labels, boxes, and empty labels.
+
+    Raises:
+        ValueError: If structure, pairing, images, or labels are invalid.
+    """
     images_dir = dataset / split / "images"
     labels_dir = dataset / split / "labels"
     if not images_dir.exists() or not labels_dir.exists():
@@ -99,6 +145,11 @@ def validate_split(dataset: Path, split: str) -> dict[str, int]:
 
 
 def main() -> int:
+    """Validate a complete dataset and optionally persist its report.
+
+    Returns:
+        Process exit status. A valid dataset returns zero.
+    """
     args = parse_args()
     dataset = args.dataset.resolve()
     data = read_yaml(dataset / "data.yaml")
@@ -141,7 +192,9 @@ def main() -> int:
 
     print(json.dumps(report, indent=2))
     if args.write_report:
-        (dataset / "validation_report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
+        (dataset / "validation_report.json").write_text(
+            json.dumps(report, indent=2), encoding="utf-8"
+        )
     return 0
 
 

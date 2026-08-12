@@ -1,10 +1,9 @@
-ultralytics>=8.3.0
-onnx>=1.16.0
-onnxruntime>=1.18.0
-tensorflow>=2.16.0
-tensorflowjs>=4.20.0
-pyyaml>=6.0
-pillow>=10.0.0
-numpy>=1.26.0
-kaggle>=1.6.0
-kagglehub>=0.3.0
+# Keep these bounds aligned with the ``train`` extra in pyproject.toml.
+ultralytics>=8.3,<9
+onnx>=1.16,<2
+onnxruntime>=1.18,<2
+pyyaml>=6,<7
+pillow>=10,<13
+numpy>=1.26,<3
+kaggle>=1.6,<2
+kagglehub>=0.3,<1

@@ -19,13 +19,12 @@ import shutil
 import sys
 import zipfile
 from collections import Counter, defaultdict
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
 
 import yaml
 from PIL import Image
-
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 DEFAULT_SPLIT_WEIGHTS = (0.8, 0.1, 0.1)
@@ -33,6 +32,8 @@ DEFAULT_SPLIT_WEIGHTS = (0.8, 0.1, 0.1)
 
 @dataclass(frozen=True)
 class Box:
+    """Normalized YOLO bounding-box annotation."""
+
     cls: int
     x: float
     y: float
@@ -42,6 +43,8 @@ class Box:
 
 @dataclass(frozen=True)
 class Record:
+    """Source image, annotations, provenance, and split constraints."""
+
     image: Path
     boxes: tuple[Box, ...]
     source: str
@@ -51,6 +54,11 @@ class Record:
 
 
 def parse_args() -> argparse.Namespace:
+    """Parse dataset-preparation command-line arguments.
+
+    Returns:
+        Parsed command-line namespace.
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--archive", type=Path, default=Path("archive.zip"))
     parser.add_argument("--work-dir", type=Path, default=Path("."))
@@ -66,17 +74,41 @@ def parse_args() -> argparse.Namespace:
         help="Additional YOLO datasets with split/images and split/labels folders.",
     )
     parser.add_argument("--hard-negatives-dir", type=Path, default=None)
-    parser.add_argument("--copy-images", action="store_true", help="Copy images instead of creating hard links.")
-    parser.add_argument("--force", action="store_true", help="Remove and rebuild the output dataset.")
-    parser.add_argument("--no-extract", action="store_true", help="Assume the raw archive is already extracted.")
+    parser.add_argument(
+        "--copy-images", action="store_true", help="Copy images instead of creating hard links."
+    )
+    parser.add_argument(
+        "--force", action="store_true", help="Remove and rebuild the output dataset."
+    )
+    parser.add_argument(
+        "--no-extract", action="store_true", help="Assume the raw archive is already extracted."
+    )
     return parser.parse_args()
 
 
 def log(message: str) -> None:
+    """Print a flushed preparation status message.
+
+    Args:
+        message: Human-readable status text.
+    """
     print(f"[prepare] {message}", flush=True)
 
 
 def extract_archive(archive: Path, raw_dir: Path, no_extract: bool) -> Path:
+    """Locate or extract the PlantVillage dataset directory.
+
+    Args:
+        archive: Source ZIP archive.
+        raw_dir: Extraction and discovery root.
+        no_extract: Whether extraction is forbidden.
+
+    Returns:
+        Directory containing images, labels, and ``classes.yaml``.
+
+    Raises:
+        FileNotFoundError: If no usable dataset can be found.
+    """
     dataset_dir = raw_dir / "PlantVillage_for_object_detection" / "Dataset"
     if dataset_dir.exists():
         log(f"Using existing extracted dataset: {dataset_dir}")
@@ -88,7 +120,8 @@ def extract_archive(archive: Path, raw_dir: Path, no_extract: bool) -> Path:
     if no_extract:
         raise FileNotFoundError(
             f"Expected extracted dataset at {dataset_dir}. "
-            f"Could not find a folder containing images/, labels/, and classes.yaml under {raw_dir}."
+            "Could not find a folder containing images/, labels/, and classes.yaml "
+            f"under {raw_dir}."
         )
     if not archive.exists():
         raise FileNotFoundError(f"Archive not found: {archive}")
@@ -97,22 +130,47 @@ def extract_archive(archive: Path, raw_dir: Path, no_extract: bool) -> Path:
     with zipfile.ZipFile(archive) as zf:
         zf.extractall(raw_dir)
     if not dataset_dir.exists():
-        raise FileNotFoundError(f"Archive extracted, but dataset folder was not found at {dataset_dir}")
+        raise FileNotFoundError(
+            f"Archive extracted, but dataset folder was not found at {dataset_dir}"
+        )
     return dataset_dir
 
 
 def find_dataset_dir(raw_dir: Path) -> Path | None:
+    """Find a YOLO dataset below a raw-data root.
+
+    Args:
+        raw_dir: Directory to search recursively.
+
+    Returns:
+        First matching dataset directory, or ``None``.
+    """
     if not raw_dir.exists():
         return None
     candidates = [raw_dir]
     candidates.extend(p.parent for p in raw_dir.rglob("classes.yaml"))
     for candidate in candidates:
-        if (candidate / "images").exists() and (candidate / "labels").exists() and (candidate / "classes.yaml").exists():
+        if (
+            (candidate / "images").exists()
+            and (candidate / "labels").exists()
+            and (candidate / "classes.yaml").exists()
+        ):
             return candidate
     return None
 
 
 def parse_yolo_label(path: Path) -> tuple[Box, ...]:
+    """Parse and validate one YOLO label file.
+
+    Args:
+        path: UTF-8 label file to parse.
+
+    Returns:
+        Validated bounding boxes in source order.
+
+    Raises:
+        ValueError: If a row is malformed or outside normalized bounds.
+    """
     boxes: list[Box] = []
     text = path.read_text(encoding="utf-8").strip()
     if not text:
@@ -137,6 +195,18 @@ def parse_yolo_label(path: Path) -> tuple[Box, ...]:
 
 
 def load_plantvillage(dataset_dir: Path) -> list[Record]:
+    """Load paired PlantVillage images and YOLO annotations.
+
+    Args:
+        dataset_dir: PlantVillage dataset directory.
+
+    Returns:
+        Validated source records.
+
+    Raises:
+        FileNotFoundError: If required directories are absent.
+        ValueError: If image-label pairing or annotations are invalid.
+    """
     images_dir = dataset_dir / "images"
     labels_dir = dataset_dir / "labels"
     if not images_dir.exists() or not labels_dir.exists():
@@ -163,12 +233,25 @@ def load_plantvillage(dataset_dir: Path) -> list[Record]:
             raise ValueError(f"PlantVillage label unexpectedly empty: {labels[stem]}")
         match = prefix_pattern.match(stem)
         stratum = match.group(1) if match else f"class_{boxes[0].cls}"
-        records.append(Record(image=images[stem], boxes=boxes, source="plantvillage", stratum=stratum, stem=stem))
+        records.append(
+            Record(
+                image=images[stem], boxes=boxes, source="plantvillage", stratum=stratum, stem=stem
+            )
+        )
     log(f"Loaded PlantVillage records: {len(records):,}")
     return records
 
 
 def find_column(row: dict[str, str], *candidates: str) -> str | None:
+    """Resolve a case-insensitive CSV column alias.
+
+    Args:
+        row: CSV row mapping.
+        *candidates: Accepted normalized column names.
+
+    Returns:
+        Original row key for the first match, or ``None``.
+    """
     lower_map = {key.lower().strip(): key for key in row}
     for candidate in candidates:
         key = lower_map.get(candidate.lower())
@@ -178,6 +261,17 @@ def find_column(row: dict[str, str], *candidates: str) -> str | None:
 
 
 def normalize_plantdoc_box(row: dict[str, str]) -> tuple[str, str, Box]:
+    """Convert one PlantDoc CSV annotation to normalized YOLO coordinates.
+
+    Args:
+        row: PlantDoc annotation row.
+
+    Returns:
+        Image filename, source class name, and normalized single-class box.
+
+    Raises:
+        ValueError: If required columns, dimensions, or box geometry are invalid.
+    """
     filename_key = find_column(row, "filename", "file", "image", "image_name")
     class_key = find_column(row, "class", "label", "name")
     xmin_key = find_column(row, "xmin", "x_min", "x1", "left")
@@ -186,7 +280,16 @@ def normalize_plantdoc_box(row: dict[str, str]) -> tuple[str, str, Box]:
     ymax_key = find_column(row, "ymax", "y_max", "y2", "bottom")
     width_key = find_column(row, "width", "image_width", "w")
     height_key = find_column(row, "height", "image_height", "h")
-    required = [filename_key, class_key, xmin_key, ymin_key, xmax_key, ymax_key, width_key, height_key]
+    required = [
+        filename_key,
+        class_key,
+        xmin_key,
+        ymin_key,
+        xmax_key,
+        ymax_key,
+        width_key,
+        height_key,
+    ]
     if any(v is None for v in required):
         raise ValueError(f"Unsupported PlantDoc CSV columns: {sorted(row)}")
 
@@ -216,6 +319,19 @@ def normalize_plantdoc_box(row: dict[str, str]) -> tuple[str, str, Box]:
 
 
 def locate_plantdoc_image(root: Path, filename: str, preferred_split: str) -> Path:
+    """Locate a PlantDoc image across known directory layouts.
+
+    Args:
+        root: PlantDoc dataset root.
+        filename: Image filename referenced by an annotation.
+        preferred_split: Preferred train or test directory.
+
+    Returns:
+        Existing image path.
+
+    Raises:
+        FileNotFoundError: If the image cannot be resolved.
+    """
     candidates = [
         root / preferred_split.upper() / filename,
         root / preferred_split.lower() / filename,
@@ -230,7 +346,15 @@ def locate_plantdoc_image(root: Path, filename: str, preferred_split: str) -> Pa
     raise FileNotFoundError(f"Could not find PlantDoc image {filename!r} under {root}")
 
 
-def load_plantdoc(root: Path) -> list[Record]:
+def load_plantdoc(root: Path | None) -> list[Record]:
+    """Load PlantDoc CSV annotations when a source root is available.
+
+    Args:
+        root: Optional PlantDoc root.
+
+    Returns:
+        Converted PlantDoc records, or an empty list.
+    """
     if root is None or not root.exists():
         return []
     csv_files = [
@@ -253,7 +377,8 @@ def load_plantdoc(root: Path) -> list[Record]:
         image = locate_plantdoc_image(root, filename, split)
         boxes = tuple(box for _, box in labeled_boxes)
         class_names = [name for name, _ in labeled_boxes]
-        stratum = "plantdoc_" + (Counter(class_names).most_common(1)[0][0] or "leaf").replace(" ", "_")
+        dominant_class = Counter(class_names).most_common(1)[0][0] or "leaf"
+        stratum = "plantdoc_" + dominant_class.replace(" ", "_")
         forced_split = "test" if split == "test" else None
         records.append(
             Record(
@@ -270,17 +395,44 @@ def load_plantdoc(root: Path) -> list[Record]:
 
 
 def load_hard_negatives(root: Path | None) -> list[Record]:
+    """Load images that intentionally carry empty YOLO labels.
+
+    Args:
+        root: Optional directory containing negative images.
+
+    Returns:
+        Hard-negative records.
+    """
     if root is None or not root.exists():
         return []
     records: list[Record] = []
     for image in sorted(root.rglob("*")):
         if image.is_file() and image.suffix.lower() in IMAGE_EXTS:
-            records.append(Record(image=image, boxes=tuple(), source="hard_negative", stratum="hard_negative", stem=image.stem))
+            records.append(
+                Record(
+                    image=image,
+                    boxes=tuple(),
+                    source="hard_negative",
+                    stratum="hard_negative",
+                    stem=image.stem,
+                )
+            )
     log(f"Loaded hard-negative records: {len(records):,}")
     return records
 
 
 def load_extra_yolo_dir(root: Path) -> list[Record]:
+    """Load a pre-split auxiliary YOLO dataset.
+
+    Args:
+        root: Dataset root containing split image and label directories.
+
+    Returns:
+        Paired records with forced source splits.
+
+    Raises:
+        ValueError: If image-label pairing is inconsistent.
+    """
     if root is None or not root.exists():
         return []
     records: list[Record] = []
@@ -316,6 +468,15 @@ def load_extra_yolo_dir(root: Path) -> list[Record]:
 
 
 def stratified_split(records: list[Record], seed: int) -> dict[str, list[Record]]:
+    """Create deterministic 80/10/10 splits within each flexible stratum.
+
+    Args:
+        records: Source records to partition.
+        seed: Random seed controlling within-stratum shuffling.
+
+    Returns:
+        Mapping of ``train``, ``val``, and ``test`` to sorted records.
+    """
     rng = random.Random(seed)
     split_records: dict[str, list[Record]] = {"train": [], "val": [], "test": []}
 
@@ -330,7 +491,7 @@ def stratified_split(records: list[Record], seed: int) -> dict[str, list[Record]
     for record in flexible:
         by_stratum[record.stratum].append(record)
 
-    for stratum, items in by_stratum.items():
+    for items in by_stratum.values():
         rng.shuffle(items)
         n = len(items)
         if n == 1:
@@ -355,12 +516,34 @@ def stratified_split(records: list[Record], seed: int) -> dict[str, list[Record]
 
 
 def safe_name(record: Record, index: int) -> str:
+    """Build a deterministic portable output filename.
+
+    Args:
+        record: Source record.
+        index: One-based global record index.
+
+    Returns:
+        Sanitized filename retaining the source extension.
+    """
     suffix = record.image.suffix.lower()
+    cleaned_source = re.sub(r"[^A-Za-z0-9_.-]+", "_", record.source).strip("._")
+    cleaned_source = cleaned_source or "source"
     cleaned_stem = re.sub(r"[^A-Za-z0-9_.-]+", "_", record.stem).strip("._")
-    return f"{record.source}_{index:06d}_{cleaned_stem}{suffix}"
+    cleaned_stem = cleaned_stem or "image"
+    return f"{cleaned_source}_{index:06d}_{cleaned_stem}{suffix}"
 
 
 def link_or_copy(src: Path, dst: Path, copy_images: bool) -> str:
+    """Materialize an image by hard link when possible, otherwise by copy.
+
+    Args:
+        src: Existing source image.
+        dst: Destination path.
+        copy_images: Force copying instead of attempting a hard link.
+
+    Returns:
+        ``"hardlink"`` or ``"copy"`` according to the operation used.
+    """
     dst.parent.mkdir(parents=True, exist_ok=True)
     if dst.exists():
         dst.unlink()
@@ -376,12 +559,30 @@ def link_or_copy(src: Path, dst: Path, copy_images: bool) -> str:
 
 
 def write_label(path: Path, boxes: Iterable[Box]) -> None:
+    """Write boxes as single-class normalized YOLO annotations.
+
+    Args:
+        path: Destination label path.
+        boxes: Source boxes whose class IDs will be rewritten to zero.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     lines = [f"0 {box.x:.8f} {box.y:.8f} {box.w:.8f} {box.h:.8f}" for box in boxes]
     path.write_text(("\n".join(lines) + "\n") if lines else "", encoding="utf-8")
 
 
-def build_dataset(split_records: dict[str, list[Record]], out_dir: Path, copy_images: bool) -> dict[str, object]:
+def build_dataset(
+    split_records: dict[str, list[Record]], out_dir: Path, copy_images: bool
+) -> dict[str, object]:
+    """Materialize a complete YOLO dataset and evidence manifests.
+
+    Args:
+        split_records: Records grouped by destination split.
+        out_dir: Output dataset root, replaced when it exists.
+        copy_images: Force copied images rather than hard links.
+
+    Returns:
+        Serializable counts by split, source, stratum, and materialization mode.
+    """
     if out_dir.exists():
         shutil.rmtree(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -442,6 +643,16 @@ def build_dataset(split_records: dict[str, list[Record]], out_dir: Path, copy_im
 
 
 def sanity_check_images(records: list[Record], sample_size: int, seed: int) -> None:
+    """Verify a deterministic sample of source images with Pillow.
+
+    Args:
+        records: Source records to sample.
+        sample_size: Maximum number of images to inspect.
+        seed: Random seed used when sampling is needed.
+
+    Raises:
+        ValueError: If an image cannot be decoded.
+    """
     rng = random.Random(seed)
     sample = records if len(records) <= sample_size else rng.sample(records, sample_size)
     for record in sample:
@@ -453,6 +664,11 @@ def sanity_check_images(records: list[Record], sample_size: int, seed: int) -> N
 
 
 def main() -> int:
+    """Prepare and validate the configured dataset sources.
+
+    Returns:
+        Process exit status. Successful preparation returns zero.
+    """
     args = parse_args()
     work_dir = args.work_dir.resolve()
     raw_dir = (args.raw_dir or work_dir / "raw").resolve()
@@ -469,7 +685,9 @@ def main() -> int:
     records.extend(load_plantdoc(args.plantdoc_dir.resolve() if args.plantdoc_dir else None))
     for extra_yolo_dir in args.extra_yolo_dir:
         records.extend(load_extra_yolo_dir(extra_yolo_dir.resolve()))
-    records.extend(load_hard_negatives(args.hard_negatives_dir.resolve() if args.hard_negatives_dir else None))
+    records.extend(
+        load_hard_negatives(args.hard_negatives_dir.resolve() if args.hard_negatives_dir else None)
+    )
     if not records:
         raise ValueError("No records found.")
 
